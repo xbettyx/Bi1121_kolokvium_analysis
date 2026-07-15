@@ -88,8 +88,7 @@ VlnPlot(breast_wt, features = c("nFeature_RNA", "nCount_RNA", "percent.mito"), n
 
 # Integration
 ```{r}
-ddgdggdvvv
-ff
+
 ```
 
 # Filtrace dat
