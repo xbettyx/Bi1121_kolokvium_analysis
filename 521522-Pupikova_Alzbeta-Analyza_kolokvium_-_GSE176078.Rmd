@@ -1,0 +1,350 @@
+---
+title: "Analýza kolokvium"
+author: "Alžběta Pupíková"
+output: 
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Načtení knihoven
+
+```{r cars}
+library(Seurat)
+library(SeuratObject)
+library(ggplot2)
+library(here)
+library(dplyr)
+library(tibble)
+library(tidyr)
+
+setwd(here("C:/Users/AlzbetaPupikova/Desktop/Osobní/Lab/Analýza GSE176078"))
+
+```
+
+# Načtení matice a metadat
+
+```{r}
+data_dir <- "C:/Users/AlzbetaPupikova/Desktop/Osobní/Lab/Analýza GSE176078/GSE176078_Wu_etal_2021_BRCA_scRNASeq (1)/Wu_etal_2021_BRCA_scRNASeq"
+
+counts <- ReadMtx(
+  mtx = file.path(data_dir, "count_matrix_sparse.mtx"),
+  features = file.path(data_dir, "count_matrix_genes.tsv"),
+  cells = file.path(data_dir, "count_matrix_barcodes.tsv"),
+  feature.column = 1 
+)
+
+metadata <- read.delim(file.path(data_dir, "metadata.csv"), header = TRUE, row.names = 1)
+
+```
+
+# Vytvoření Seurat objektu
+
+```{r}
+breast_atlas <- CreateSeuratObject(counts = counts, meta.data = metadata, project = "BreastAtlas_Full")
+```
+
+
+# Počet genů a buněk
+
+```{r}
+# Amount of genes
+nrow(breast_atlas)
+# Amount of cells
+ncol(breast_atlas)
+```
+# Vyfiltrování pouze p53 WT vzorků (v tomto případě pacienti s ER+)
+
+```{r}
+colnames(breast_atlas@meta.data)
+er_patients <- c("CID3941", "CID3948", "CID3963", "CID4040", "CID4067", 
+                 "CID4290", "CID4398", "CID4461", "CID4463", "CID4471", 
+                 "CID4530", "CID4535") #ID pacientů jsem zjistila ze supplementary files u článku k danému datasetu
+breast_wt <- subset(breast_atlas, subset = orig.ident %in% er_patients)
+Idents(breast_wt) <- "ER_WT_Cohort"
+
+```
+# Uvolnění paměti
+
+```{r}
+rm(breast_atlas)
+gc()
+```
+# Výpočet procenta mitochondriálních genů a vizualizace
+
+```{r}
+breast_wt[["percent.mito"]] <- PercentageFeatureSet(breast_wt, pattern = "^MT-")
+VlnPlot(breast_wt, features = c("nFeature_RNA", "nCount_RNA", "percent.mito"), ncol = 3, pt.size = 0)
+```
+
+# Integration
+```{r}
+ddgdggdvvv
+ff
+```
+
+# Filtrace dat
+
+```{r}
+breast_filtered <- subset(breast_wt, 
+                          nFeature_RNA > 300 & 
+                          nFeature_RNA < 3000 &   
+                          nCount_RNA > 500 & 
+                          nCount_RNA < 10000 &     
+                          percent.mito < 12)
+
+VlnPlot(breast_filtered, features = c('nFeature_RNA','nCount_RNA','percent.mito'), pt.size = 0)
+```
+
+# Kontrola počtu buněk po filtraci 
+
+```{r}
+ncol(breast_wt)
+ncol(breast_filtered)
+```
+
+# Normalizace dat
+```{r}
+breast_norm <- NormalizeData(breast_filtered)
+```
+# Hledání variabilních genů
+
+```{r}
+breast_norm <- FindVariableFeatures(breast_norm, nfeatures = 2000)
+```
+# Škálování dat 
+
+```{r}
+breast_scaled <- ScaleData(breast_norm)
+```
+# PCA 
+
+```{r}
+breast_scaled <- RunPCA(breast_scaled)
+
+pca_output <- DimPlot(breast_scaled, 
+                        label=F,
+                        pt.size = 1,
+                        reduction = "pca",
+                        label.size = 4,
+                        group.by = "orig.ident",
+                        repel = T,
+                        label.box = T) + 
+  theme(legend.position = "right") + 
+  ggtitle("PCA")
+pca_output
+```
+
+# Elbow plot
+
+```{r}
+ElbowPlot(breast_scaled, ndims = 30)
+```
+# Dimenzionální redukce - TSNE
+
+```{r}
+breast_scaled <- RunTSNE(breast_scaled, dims = 1:20)
+```
+
+```{r}
+batches <- DimPlot(breast_scaled, 
+                        label=F,
+                        pt.size = 1,
+                        reduction = "tsne",
+                        label.size = 4,
+                        repel = T,
+                        group.by = "orig.ident",
+                        label.box = T) + 
+  theme(legend.position = "right") + 
+  ggtitle("TSNE")
+batches
+```
+
+# Dimenzionální redukce - UMAP
+
+```{r}
+breast_scaled <- RunUMAP(breast_scaled, dims = 1:20)
+```
+
+```{r}
+umap_output <- DimPlot(breast_scaled, 
+                        label=F,
+                        pt.size = 1,
+                        reduction = "umap",
+                        label.size = 4,
+                        group.by = "orig.ident",
+                        repel = T,
+                        label.box = T) + 
+  theme(legend.position = "right") + 
+  ggtitle("UMAP")
+umap_output
+```
+# Clustering
+
+```{r}
+breast_scaled <- FindNeighbors(breast_scaled, dims = 1:20)
+breast_scaled <- FindClusters(breast_scaled, resolution = 0.5)
+```
+# Vizualizace clusterů
+
+```{r}
+clusters <- DimPlot(breast_scaled, 
+                        label=T,
+                        pt.size = 1,
+                        reduction = "umap",
+                        label.size = 4,
+                        group.by = "seurat_clusters",
+                        repel = T,
+                        label.box = T) + 
+  theme(legend.position = "right") + 
+  ggtitle("UMAP - Clusters")
+clusters
+```
+
+```{r}
+DimPlot(breast_scaled, reduction = "umap", label = TRUE, pt.size = 0.1)
+```
+# Feature plot, použijeme standartní markery pro jednotlivé typy buněk karcinomu prsu
+
+```{r}
+FeaturePlot(breast_scaled, features = c("EPCAM", "COL1A1", "PECAM1", "CD3D", "CD79A", "CD68"), ncol = 3)
+```
+
+# DE - každý cluster proti všem ostatním
+
+```{r}
+cluster_markers_ipa <- FindAllMarkers(breast_scaled, 
+                                      only.pos = FALSE, 
+                                      min.pct = 0.1, 
+                                      logfc.threshold = 0.25)
+```
+
+```{r}
+head(cluster_markers_ipa)
+```
+
+# Uložení výsledku z DE pro použití do Ingenuity pathway analysis
+
+```{r}
+  
+write.csv(cluster_markers_ipa, file = "DE_markers_for_IPA.csv", row.names = FALSE)
+```
+
+# Gene enrichment analysis PROGENY - p53
+
+```{r}
+library(decoupleR)
+library(OmnipathR)
+
+options(omnipathr.curl_verbose = TRUE)
+omnipath_set_cachedir(tempdir())
+
+
+httr::set_config(httr::config(http_version = 2))
+Sys.setenv(CURL_HTTP_VERSION = "1.1")
+
+progeny_net <- decoupleR::get_progeny(organism='human', top = 500)
+```
+
+```{r}
+mat <- as.matrix(breast_scaled@assays[["RNA"]]@layers[["data"]])
+rownames(mat) <- rownames(breast_scaled)
+colnames(mat) <- colnames(breast_scaled)
+```
+
+```{r}
+acts <- run_ulm(mat = mat, network = progeny_net, .source = 'source', .target = 'target', .mor = 'weight', minsize = 5)
+```
+
+```{r}
+
+breast_scaled[['pathwayscores']] <- acts %>%
+  filter(statistic == 'ulm') %>% 
+  pivot_wider(id_cols = 'source', names_from = 'condition',
+              values_from = 'score') %>%
+  :column_to_rownames('source') %>% 
+  Seurat::CreateAssayObject(.)
+```
+
+```{r}
+DefaultAssay(object = breast_scaled) <- "pathwayscores"
+```
+
+# Znovu naškálujeme data
+```{r}
+breast_scaled <- ScaleData(breast_scaled)
+breast_scaled@assays$pathwayscores@data <- breast_scaled@assays$pathwayscores@scale.data
+```
+
+# Vizualizace pathway scores - p53 a hypoxie
+
+```{r}
+DotPlot(breast_scaled, 
+        features = c("p53"), 
+        group.by = "orig.ident",
+        cols = c("darkblue","red")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+
+```{r}
+(FeaturePlot(breast_scaled, features = c("p53"), pt.size = 0.8) & 
+  scale_colour_gradient2(low = 'darkblue', high = 'red')) +
+  ggtitle('p53 activity')
+```
+
+# Analýza signálních drah p53 a ATF4 pomocí AddModuleScore
+
+```{r}
+DefaultAssay(breast_scaled) <- "RNA"
+
+p53_targets  <- list(c("CDKN1A", "MDM2", "BAX", "BBC3", "GADD45A", "TP53INP1", "FAS"))
+atf4_targets <- list(c("DDIT3", "ASNS", "TRIB3", "SLC7A11", "ATF3", "CEBPB", "PPP1R15A"))
+
+
+breast_scaled <- AddModuleScore(
+  object = breast_scaled,
+  features = p53_targets,
+  name = "p53_Seurat"
+)
+
+
+breast_scaled <- AddModuleScore(
+  object = breast_scaled,
+  features = atf4_targets,
+  name = "ATF4_Seurat"
+)
+
+```
+
+
+```{r}
+plot_data_complete <- data.frame(
+  p53_Score = breast_scaled$p53_Seurat1,
+  ATF4_Score = breast_scaled$ATF4_Seurat1,
+  Cluster = breast_scaled$seurat_clusters
+)
+```
+
+# Výpočet korelace
+
+```{r}
+korelace_komplet <- cor.test(plot_data_complete$p53_Score, plot_data_complete$ATF4_Score, method = "pearson")
+print(korelace_komplet)
+ 
+```
+
+
+
+
+
